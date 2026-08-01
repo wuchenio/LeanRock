@@ -64,12 +64,14 @@ MCP、后台服务、网络运行时、LLM 调用或自动 Git 写操作。
 安装后，本地状态位于：
 
 ```text
-.leanrock/state/
-├── ACTIVE_SESSION.json
-├── CURRENT.md
-├── RECOVERY.md
-└── turns/
-    └── <session_id>.jsonl
+.leanrock/
+├── CURRENT.template.md
+└── state/
+    ├── ACTIVE_SESSION.json
+    ├── CURRENT.md
+    ├── RECOVERY.md
+    └── turns/
+        └── <session_id>.jsonl
 ```
 
 `ACTIVE_SESSION.json` 是 Hook 原子维护的当前主 Session 指针，包含原始 session ID、
@@ -82,6 +84,10 @@ same worktree are unsupported；多个主会话会竞争单一 ACTIVE_SESSION �
 `CURRENT.md` 是主 Agent 维护的短小当前事实：确认决定、未批准提案、开放问题、范围、
 授权、阶段、阻塞和下一步。它不是聊天历史。只有当前 worktree 的主 Agent 可以修改；
 子 Agent 只读。
+
+`CURRENT.template.md` 是随项目提交、因而会进入每个 Git worktree 的初始模板。根
+`SessionStart` 发现 `state/CURRENT.md` 缺失时会从它原子初始化；现有 CURRENT 永远不会
+被模板覆盖。安装 LeanRock 后应把 managed files（包括此模板）提交到项目仓库。
 
 `turns/<session_id>.jsonl` 是 Hook 从 `UserPromptSubmit.prompt` 和
 `Stop.last_assistant_message` 获得的准确原文，每个 session 独立，按 `seq` 递增，不做
@@ -159,6 +165,10 @@ python3 install.py doctor /path/to/project
 Hook handler/script 和安装版本。它保留既有 Hook，不删除业务文件，写前备份，不 commit、
 push 或自动信任 Hook。`CURRENT.md` 仅在不存在时创建，update 永远不覆盖它。无法安全
 合并时停止对应写入并报告。
+
+在生成计划前，安装器会一次性检查所有 managed target：目标及已有父目录不得是符号链接
+或 Windows Junction，解析后的路径必须仍在 Git 根目录内。任何目标不安全时不会写入任何
+文件；正常写入使用同目录临时文件和 `os.replace()` 原子替换。
 
 `doctor` 完全只读，检查 managed block、Skills、hooks、Hook 脚本、CURRENT、版本，并
 提醒 Hook trust 状态可能因定义变化而需要复审。

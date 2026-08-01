@@ -5,8 +5,10 @@ from __future__ import annotations
 
 import argparse
 import json
-import shutil
+import os
+import stat
 import sys
+import tempfile
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -128,9 +130,76 @@ def read_text(path: Path) -> str:
         return ""
 
 
+def managed_targets(project: Path, mode: str) -> list[Path]:
+    targets = [
+        project / "AGENTS.md",
+        project / ".codex/hooks/leanrock_continuity.py",
+        project / ".codex/hooks.json",
+        project / ".gitignore",
+        project / ".leanrock/CURRENT.template.md",
+        project / ".leanrock/VERSION",
+        project / ".leanrock/backups",
+    ]
+    for name in SKILLS:
+        targets.extend([
+            project / ".agents/skills" / name / "SKILL.md",
+            project / ".agents/skills" / name / "agents/openai.yaml",
+        ])
+    if mode == "install":
+        targets.append(project / ".leanrock/state/CURRENT.md")
+    return targets
+
+
+def link_like(path: Path) -> bool:
+    try:
+        info = path.lstat()
+    except FileNotFoundError:
+        return False
+    if stat.S_ISLNK(info.st_mode):
+        return True
+    reparse = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
+    return bool(getattr(info, "st_file_attributes", 0) & reparse)
+
+
+def path_error(project: Path, target: Path) -> str | None:
+    root = project.resolve()
+    try:
+        target.relative_to(root)
+    except ValueError:
+        return f"{target}: target is outside the Git root"
+
+    current = target
+    while True:
+        if link_like(current):
+            return f"{target.relative_to(root)}: target or existing parent is a symbolic link or junction"
+        if current != target and current.exists() and not current.is_dir():
+            return f"{target.relative_to(root)}: existing parent is not a directory"
+        if current == root:
+            break
+        current = current.parent
+
+    backup_root = root / ".leanrock/backups"
+    if target == backup_root and target.exists() and not target.is_dir():
+        return ".leanrock/backups: backup path is not a directory"
+    if target != backup_root and target.exists() and not target.is_file():
+        return f"{target.relative_to(root)}: managed file target is not a regular file"
+
+    try:
+        target.resolve(strict=False).relative_to(root)
+    except ValueError:
+        return f"{target.relative_to(root)}: resolved target is outside the Git root"
+    return None
+
+
+def preflight(project: Path, mode: str) -> list[str]:
+    return [error for target in managed_targets(project, mode) if (error := path_error(project, target))]
+
+
 def collect(project: Path, mode: str) -> tuple[list[Change], list[str]]:
     changes: list[Change] = []
-    errors: list[str] = []
+    errors = preflight(project, mode)
+    if errors:
+        return changes, errors
 
     def propose(relative: str, content: bytes, reason: str, only_if_missing: bool = False) -> None:
         target = project / relative
@@ -174,8 +243,10 @@ def collect(project: Path, mode: str) -> tuple[list[Change], list[str]]:
     except ValueError as exc:
         errors.append(f".gitignore: {exc}")
 
+    current_template = (TEMPLATE / ".leanrock/state/CURRENT.example.md").read_bytes()
+    propose(".leanrock/CURRENT.template.md", current_template, "worktree state template")
     if mode == "install":
-        propose(".leanrock/state/CURRENT.md", (TEMPLATE / ".leanrock/state/CURRENT.example.md").read_bytes(), "initial state", only_if_missing=True)
+        propose(".leanrock/state/CURRENT.md", current_template, "initial state", only_if_missing=True)
     propose(".leanrock/VERSION", (ROOT / "VERSION").read_bytes(), "installed version")
     return changes, errors
 
@@ -186,15 +257,41 @@ def backup(project: Path, target: Path) -> None:
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ")
     relative = target.relative_to(project)
     destination = project / ".leanrock" / "backups" / stamp / relative
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(target, destination)
+    error = path_error(project, project / ".leanrock/backups")
+    if error:
+        raise ValueError(error)
+    atomic_write_bytes(destination, target.read_bytes(), target.stat().st_mode & 0o777)
 
 
-def apply_changes(project: Path, changes: list[Change]) -> None:
+def atomic_write_bytes(target: Path, content: bytes, mode: int = 0o644) -> None:
+    target.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, raw_temp = tempfile.mkstemp(prefix=f".{target.name}.", suffix=".tmp", dir=target.parent)
+    temp = Path(raw_temp)
+    try:
+        with os.fdopen(descriptor, "wb") as handle:
+            handle.write(content)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.chmod(temp, mode)
+        os.replace(temp, target)
+    finally:
+        try:
+            temp.unlink()
+        except FileNotFoundError:
+            pass
+
+
+def apply_changes(project: Path, changes: list[Change], mode: str) -> None:
+    errors = preflight(project, mode)
+    if errors:
+        raise ValueError("; ".join(errors))
     for change in changes:
+        error = path_error(project, change.path)
+        if error:
+            raise ValueError(error)
         backup(project, change.path)
-        change.path.parent.mkdir(parents=True, exist_ok=True)
-        change.path.write_bytes(change.content)
+        existing_mode = change.path.stat().st_mode & 0o777 if change.path.exists() else 0o644
+        atomic_write_bytes(change.path, change.content, existing_mode)
 
 
 def doctor(project: Path) -> int:
@@ -249,7 +346,11 @@ def main() -> int:
     if not getattr(args, "apply", False):
         print("Dry-run only. Re-run with --apply to write files.")
         return 0
-    apply_changes(project, changes)
+    try:
+        apply_changes(project, changes, args.command)
+    except (OSError, ValueError) as exc:
+        print(f"ERROR no further files were written: {exc}", file=sys.stderr)
+        return 1
     print(f"Applied {len(changes)} change(s). No commit, push, or hook trust was performed.")
     return 0
 

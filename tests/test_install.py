@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -45,8 +46,42 @@ class InstallTests(unittest.TestCase):
         self.install()
         self.assertTrue((self.project / "AGENTS.md").is_file())
         self.assertTrue((self.project / ".codex/hooks/leanrock_continuity.py").is_file())
-        self.assertEqual((self.project / ".leanrock/VERSION").read_text().strip(), "0.1.1")
+        self.assertEqual((self.project / ".leanrock/VERSION").read_text().strip(), "0.1.2")
+        self.assertTrue((self.project / ".leanrock/CURRENT.template.md").is_file())
         self.assertIn(".leanrock/state/ACTIVE_SESSION.json", (self.project / ".gitignore").read_text())
+
+    def test_symlink_target_is_rejected_before_any_write(self) -> None:
+        outside = Path(self.temp.name) / "outside.txt"
+        outside.write_text("do not overwrite")
+        version = self.project / ".leanrock/VERSION"
+        version.parent.mkdir(parents=True)
+        try:
+            os.symlink(outside, version)
+        except (OSError, NotImplementedError) as exc:
+            self.skipTest(f"symbolic links unavailable: {exc}")
+
+        result = run(INSTALL, "install", self.project, "--apply", check=False)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("symbolic link or junction", result.stderr)
+        self.assertEqual(outside.read_text(), "do not overwrite")
+        self.assertFalse((self.project / "AGENTS.md").exists())
+
+    def test_symlink_parent_is_rejected_before_any_write(self) -> None:
+        outside = Path(self.temp.name) / "outside directory"
+        outside.mkdir()
+        agents = self.project / ".agents"
+        try:
+            os.symlink(outside, agents, target_is_directory=True)
+        except (OSError, NotImplementedError) as exc:
+            self.skipTest(f"symbolic links unavailable: {exc}")
+
+        result = run(INSTALL, "install", self.project, "--apply", check=False)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("symbolic link or junction", result.stderr)
+        self.assertEqual(list(outside.iterdir()), [])
+        self.assertFalse((self.project / "AGENTS.md").exists())
 
     def test_existing_agents_content_is_preserved(self) -> None:
         original = "# Business rules\n\nDo not change invoices.\n"
@@ -85,6 +120,45 @@ class InstallTests(unittest.TestCase):
         current.write_text("private current state 中文\n")
         run(INSTALL, "update", self.project, "--apply")
         self.assertEqual(current.read_text(), "private current state 中文\n")
+
+    def test_new_worktree_initializes_current_from_tracked_template(self) -> None:
+        self.install()
+        subprocess.run(["git", "-C", str(self.project), "add", "-A"], check=True)
+        subprocess.run(
+            [
+                "git", "-C", str(self.project), "-c", "user.name=LeanRock Tests",
+                "-c", "user.email=tests@leanrock.local", "commit", "-qm", "install LeanRock",
+            ],
+            check=True,
+        )
+        worktree = Path(self.temp.name) / "new worktree 工作树"
+        subprocess.run(
+            ["git", "-C", str(self.project), "worktree", "add", "-qb", "test-worktree", str(worktree)],
+            check=True,
+        )
+        try:
+            current = worktree / ".leanrock/state/CURRENT.md"
+            self.assertFalse(current.exists())
+            hook = worktree / ".codex/hooks/leanrock_continuity.py"
+            payload = json.dumps({
+                "hook_event_name": "SessionStart",
+                "session_id": "worktree-session",
+                "source": "startup",
+            })
+            result = subprocess.run(
+                [sys.executable, str(hook)], input=payload, text=True, capture_output=True, check=True,
+                cwd=worktree,
+            )
+            json.loads(result.stdout)
+            self.assertEqual(
+                current.read_text(encoding="utf-8"),
+                (worktree / ".leanrock/CURRENT.template.md").read_text(encoding="utf-8"),
+            )
+        finally:
+            subprocess.run(
+                ["git", "-C", str(self.project), "worktree", "remove", "--force", str(worktree)],
+                check=True,
+            )
 
     def test_dry_run_and_doctor_do_not_modify(self) -> None:
         before = digest_tree(self.project)

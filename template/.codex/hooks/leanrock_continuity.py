@@ -214,6 +214,17 @@ def current_text() -> str:
         return ""
 
 
+def initialize_current() -> None:
+    current = state_dir() / "CURRENT.md"
+    if current.exists():
+        return
+    try:
+        template = (repo_root() / ".leanrock" / "CURRENT.template.md").read_text(encoding="utf-8")
+        atomic_write(current, template)
+    except (FileNotFoundError, OSError, UnicodeError):
+        pass
+
+
 def marker(current: str) -> tuple[str | None, int | None]:
     session = re.search(r"^last_incorporated_session_id:\s*[\"']?([^\n\"']*)", current, re.MULTILINE)
     seq = re.search(r"^last_incorporated_seq:\s*(\d+)", current, re.MULTILINE)
@@ -299,6 +310,7 @@ def root_context(
 
 
 def session_context(data: dict[str, Any]) -> None:
+    initialize_current()
     raw_session = data.get("session_id")
     source = str(data.get("source") or "startup")
     if not isinstance(raw_session, str) or not raw_session:
