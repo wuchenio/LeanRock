@@ -1,0 +1,56 @@
+{
+  "description": "LeanRock local continuity hooks.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|clear|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$(git rev-parse --show-toplevel)/.codex/hooks/leanrock_continuity.py\"",
+            "commandWindows": "$root = git rev-parse --show-toplevel; $script = Join-Path $root \".codex\\hooks\\leanrock_continuity.py\"; if (Get-Command py -ErrorAction SilentlyContinue) { py -3 $script } elseif (Get-Command python -ErrorAction SilentlyContinue) { python $script }",
+            "timeout": 5,
+            "additionalContextLimit": 2000
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$(git rev-parse --show-toplevel)/.codex/hooks/leanrock_continuity.py\"",
+            "commandWindows": "$root = git rev-parse --show-toplevel; $script = Join-Path $root \".codex\\hooks\\leanrock_continuity.py\"; if (Get-Command py -ErrorAction SilentlyContinue) { py -3 $script } elseif (Get-Command python -ErrorAction SilentlyContinue) { python $script }",
+            "timeout": 5,
+            "additionalContextLimit": 2000
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$(git rev-parse --show-toplevel)/.codex/hooks/leanrock_continuity.py\"",
+            "commandWindows": "$root = git rev-parse --show-toplevel; $script = Join-Path $root \".codex\\hooks\\leanrock_continuity.py\"; if (Get-Command py -ErrorAction SilentlyContinue) { py -3 $script } elseif (Get-Command python -ErrorAction SilentlyContinue) { python $script }",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$(git rev-parse --show-toplevel)/.codex/hooks/leanrock_continuity.py\"",
+            "commandWindows": "$root = git rev-parse --show-toplevel; $script = Join-Path $root \".codex\\hooks\\leanrock_continuity.py\"; if (Get-Command py -ErrorAction SilentlyContinue) { py -3 $script } elseif (Get-Command python -ErrorAction SilentlyContinue) { python $script }",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}
