@@ -76,6 +76,9 @@ MCP、后台服务、网络运行时、LLM 调用或自动 Git 写操作。
 最新 root turn ID、最新 seq 和准确 turn log 路径。Checkpoint 通过该指针定位日志，不猜测
 最近修改文件、不扫描所有 Session，也不依赖聊天记忆。
 
+LeanRock V0.1 requires one active root Codex session per worktree. Concurrent root sessions in the
+same worktree are unsupported；多个主会话会竞争单一 ACTIVE_SESSION 和 RECOVERY 文件。
+
 `CURRENT.md` 是主 Agent 维护的短小当前事实：确认决定、未批准提案、开放问题、范围、
 授权、阶段、阻塞和下一步。它不是聊天历史。只有当前 worktree 的主 Agent 可以修改；
 子 Agent 只读。

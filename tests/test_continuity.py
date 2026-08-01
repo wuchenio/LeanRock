@@ -44,13 +44,15 @@ class ContinuityTests(unittest.TestCase):
         session: str | None = "session-A",
         **fields: object,
     ) -> subprocess.CompletedProcess[str]:
-        payload = {
+        turn_id = fields.pop("turn_id", None)
+        payload: dict[str, object] = {
             "hook_event_name": event,
             "session_id": session,
-            "turn_id": fields.pop("turn_id", "turn-1"),
             "cwd": str(self.project),
             **fields,
         }
+        if turn_id is not None:
+            payload["turn_id"] = turn_id
         return subprocess.run(
             [sys.executable, str(self.hook)],
             input=json.dumps(payload, ensure_ascii=False),
@@ -113,9 +115,10 @@ class ContinuityTests(unittest.TestCase):
 
     def test_session_start_updates_pointer_but_subagent_and_missing_session_do_not(self) -> None:
         self.add_pair(0)
-        self.invoke("SessionStart", turn_id="root-start", source="resume")
+        self.assertEqual(self.active()["turn_id"], "a0")
+        self.invoke("SessionStart", source="resume")
         pointer = self.active()
-        self.assertEqual(pointer["turn_id"], "root-start")
+        self.assertEqual(pointer["turn_id"], "a0")
         self.assertEqual(pointer["latest_seq"], 2)
 
         subagent = self.invoke("SubagentStart", "parent-session", agent_id="sub", agent_type="explore")
@@ -123,6 +126,12 @@ class ContinuityTests(unittest.TestCase):
         self.assertEqual(self.active(), pointer)
         self.invoke("UserPromptSubmit", None, prompt="missing session")
         self.assertEqual(self.active(), pointer)
+
+    def test_session_start_without_turn_id_preserves_latest_root_turn(self) -> None:
+        self.invoke("UserPromptSubmit", prompt="user", turn_id="user-turn")
+        self.invoke("Stop", last_assistant_message="assistant", turn_id="assistant-turn")
+        self.invoke("SessionStart", source="compact")
+        self.assertEqual(self.active()["turn_id"], "assistant-turn")
 
     def test_sessions_have_independent_logs_and_sequences(self) -> None:
         self.invoke("UserPromptSubmit", "one", prompt="first")
@@ -169,7 +178,10 @@ class ContinuityTests(unittest.TestCase):
         lock.write_text("held", encoding="utf-8")
         before = path.read_bytes()
         result = self.invoke("SessionStart", source="compact")
-        self.assertEqual(json.loads(result.stdout), {})
+        context = self.context(result)
+        self.assertIn("LeanRock recovery could not be completed", context)
+        self.assertIn("Read `.leanrock/state/CURRENT.md`", context)
+        self.assertIn("Do not rely on compacted memory alone", context)
         self.assertEqual(path.read_bytes(), before)
         self.assertFalse(list(path.parent.glob("session-A.jsonl.corrupt-*.bak")))
 

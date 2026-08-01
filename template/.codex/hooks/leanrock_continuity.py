@@ -186,9 +186,17 @@ def update_active_session(data: dict[str, Any], path: Path, latest_seq: int) -> 
     raw_session = data.get("session_id")
     if not isinstance(raw_session, str) or not raw_session:
         return
+    turn_id = data.get("turn_id")
+    if not isinstance(turn_id, str) or not turn_id:
+        try:
+            existing = json.loads((state_dir() / "ACTIVE_SESSION.json").read_text(encoding="utf-8"))
+        except (FileNotFoundError, OSError, UnicodeError, json.JSONDecodeError):
+            existing = {}
+        preserved = existing.get("turn_id", "") if existing.get("session_id") == raw_session else ""
+        turn_id = preserved if isinstance(preserved, str) else ""
     pointer = {
         "session_id": raw_session,
-        "turn_id": str(data.get("turn_id") or ""),
+        "turn_id": turn_id,
         "latest_seq": latest_seq,
         "turn_log": path.relative_to(repo_root()).as_posix(),
         "updated_at": utc_now(),
@@ -361,7 +369,23 @@ def main() -> int:
             subagent_context()
     except Exception:
         # All hook failures are advisory. Never emit turn text or block Codex.
-        sys.stdout.write("{}\n")
+        if event == "SessionStart":
+            output_context(
+                "SessionStart",
+                "LeanRock recovery could not be completed.\n\n"
+                "Before editing files or calling tools:\n"
+                "1. Read `.leanrock/state/CURRENT.md`.\n"
+                "2. Do not rely on compacted memory alone.\n"
+                "3. Verify the active session and recovery files before continuing.",
+            )
+        elif event == "SubagentStart":
+            output_context(
+                "SubagentStart",
+                "LeanRock state recovery is unavailable. Treat project state as read-only and "
+                "return findings to the main agent.",
+            )
+        else:
+            sys.stdout.write("{}\n")
     return 0
 
 
