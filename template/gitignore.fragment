@@ -1,6 +1,7 @@
 # LEANROCK:START
 .leanrock/state/CURRENT.md
 .leanrock/state/RECOVERY.md
+.leanrock/state/ACTIVE_SESSION.json
 .leanrock/state/turns/
 .leanrock/backups/
 .leanrock/learnings/inbox/

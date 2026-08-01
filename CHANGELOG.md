@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.1 - 2026-08-01
+
+- Active root-session pointer for reliable checkpoint log selection.
+- Valid-prefix recovery for corrupt turn logs.
+- Lock-consistent turn-log reads and appends.
+- File-based compact recovery without raw-turn `additionalContext` injection.
+- Fail-open Hook output hardening.
+
 ## 0.1.0 - 2026-08-01
 
 - Initial LeanRock rules.

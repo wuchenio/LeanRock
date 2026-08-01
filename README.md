@@ -65,11 +65,19 @@ MCP、后台服务、网络运行时、LLM 调用或自动 Git 写操作。
 
 ```text
 .leanrock/state/
+├── ACTIVE_SESSION.json
 ├── CURRENT.md
 ├── RECOVERY.md
 └── turns/
     └── <session_id>.jsonl
 ```
+
+`ACTIVE_SESSION.json` 是 Hook 原子维护的当前主 Session 指针，包含原始 session ID、
+最新 root turn ID、最新 seq 和准确 turn log 路径。Checkpoint 通过该指针定位日志，不猜测
+最近修改文件、不扫描所有 Session，也不依赖聊天记忆。
+
+LeanRock V0.1 requires one active root Codex session per worktree. Concurrent root sessions in the
+same worktree are unsupported；多个主会话会竞争单一 ACTIVE_SESSION 和 RECOVERY 文件。
 
 `CURRENT.md` 是主 Agent 维护的短小当前事实：确认决定、未批准提案、开放问题、范围、
 授权、阶段、阻塞和下一步。它不是聊天历史。只有当前 worktree 的主 Agent 可以修改；
@@ -80,9 +88,13 @@ MCP、后台服务、网络运行时、LLM 调用或自动 Git 写操作。
 语义总结。`CURRENT.md` marker 只表示 checkpoint Skill 实际读过并吸收的最高序号。
 
 当 `SessionStart.source` 为 `compact` 时，Hook 选择 marker 之后的全部消息，再合并当前
-session 最近六条，去重并保持顺序，写入 `RECOVERY.md`。短内容直接注入；超过严格字符
-上限时只注入有界 CURRENT、Recovery 的 head/tail preview 和必须完整读取
-`.leanrock/state/RECOVERY.md` 的指令。它绝不会只恢复最后一条消息，也不用 LLM 挑选。
+session 最近六条，去重并保持顺序，写入 `RECOVERY.md`。Hook 的 `additionalContext` 只
+注入读取 CURRENT/RECOVERY 的短小控制指令和 session/seq/count 元数据，不注入历史消息
+原文。RECOVERY 中的原文被明确标记为历史证据而不是 Developer 指令。它绝不会只恢复
+最后一条消息，也不用 LLM 总结或挑选。
+
+如果 JSONL 尾行损坏，Hook 在同一 session lock 内备份原文件、保留连续合法前缀并原子
+重建当前日志；下一条消息从合法前缀的下一个 seq 继续，而不是清空历史从 1 重来。
 
 LeanRock 不解析 `transcript_path`，因为 Codex 官方文档明确声明 transcript 格式不是
 稳定 Hook 接口。LeanRock 保存自己稳定、准确、逐 session 的消息记录。V0.1 不捕获未完成
@@ -162,7 +174,7 @@ push 或自动信任 Hook。`CURRENT.md` 仅在不存在时创建，update 永�
 
 消息日志只保存在本地，不联网、不调用 LLM，也不读取 Secret 文件。不要在聊天中粘贴
 Secret：准确记录意味着原文会写入磁盘。支持的平台上，Hook 尽量把状态文件权限限制为
-当前用户可读写。`.gitignore` 默认忽略 CURRENT、RECOVERY、turns、备份和学习 inbox；
+当前用户可读写。`.gitignore` 默认忽略 ACTIVE_SESSION、CURRENT、RECOVERY、turns、备份和学习 inbox；
 仍应按项目的数据分类与设备安全策略管理本地磁盘。
 
 ## Capture 与 Promote

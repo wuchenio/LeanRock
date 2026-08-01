@@ -45,7 +45,8 @@ class InstallTests(unittest.TestCase):
         self.install()
         self.assertTrue((self.project / "AGENTS.md").is_file())
         self.assertTrue((self.project / ".codex/hooks/leanrock_continuity.py").is_file())
-        self.assertEqual((self.project / ".leanrock/VERSION").read_text().strip(), "0.1.0")
+        self.assertEqual((self.project / ".leanrock/VERSION").read_text().strip(), "0.1.1")
+        self.assertIn(".leanrock/state/ACTIVE_SESSION.json", (self.project / ".gitignore").read_text())
 
     def test_existing_agents_content_is_preserved(self) -> None:
         original = "# Business rules\n\nDo not change invoices.\n"

@@ -25,8 +25,8 @@ Think deeply. Build lightly.
   provenance, destructive-operation safety, irreversible data protection, validation,
   loss-preventing error handling, accessibility, and explicitly retained behavior.
 - Deliberate simplification uses `leanrock: <current ceiling>; upgrade when <measurable trigger>`.
-- A non-trivial implementation defaults to one independent worktree, one main thread,
-  and one explicit scope.
+- LeanRock V0.1 requires one active root Codex session per worktree and one explicit scope.
+- Concurrent root sessions in the same worktree are unsupported.
 - Only the main Agent for the current worktree may modify `.leanrock/state/CURRENT.md`.
 - Subagents treat state as read-only and return findings to the main Agent.
 - Agent proposals are proposals, not Product Owner decisions.
